@@ -64,6 +64,14 @@ impl<'sess, 'pr> HarnessRunner<'sess, 'pr> {
                         &harness,
                     )?;
 
+                    if self.sess.args.synthesize_loop_contracts {
+                        if !self.sess.args.quiet {
+                            println!("Start to synthesize loop contracts for all loops.");
+                            println!("WARNING: this process may not terminate.");
+                        }
+                        self.sess.synthesize_loop_contracts(&specialized_obj)?;
+                    }
+
                     let result = self.sess.check_harness(&specialized_obj, &report_dir, harness)?;
                     Ok(HarnessResult { harness, result })
                 })
