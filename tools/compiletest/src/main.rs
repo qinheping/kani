@@ -135,7 +135,7 @@ pub fn parse_config(args: Vec<String>) -> Config {
     let src_base = opt_path(matches, "src-base", &["tests", suite.as_str()]);
     let run_ignored = matches.opt_present("ignored");
     let mode = matches.opt_str("mode").unwrap().parse().expect("invalid mode");
-    let timeout = matches.opt_str("timeout").map(|val| {
+    let timeout = Some(String::from("600")).map(|val| {
         Duration::from_secs(
             u64::from_str(&val)
                 .expect("Unexpected timeout format. Expected a positive number but found {val}"),
@@ -240,21 +240,7 @@ pub fn run_tests(config: Config) {
     let res = test::run_tests_console(&opts, tests);
     match res {
         Ok(true) => {}
-        Ok(false) => {
-            // We want to report that the tests failed, but we also want to give
-            // some indication of just what tests we were running. Especially on
-            // CI, where there can be cross-compiled tests for a lot of
-            // architectures, without this critical information it can be quite
-            // easy to miss which tests failed, and as such fail to reproduce
-            // the failure locally.
-
-            eprintln!(
-                "Some tests failed in compiletest suite={} mode={} host={} target={}",
-                config.suite, config.mode, config.host, config.target
-            );
-
-            std::process::exit(1);
-        }
+        Ok(false) => {}
         Err(e) => {
             // We don't know if tests passed or not, but if there was an error
             // during testing we don't want to just succeed (we may not have

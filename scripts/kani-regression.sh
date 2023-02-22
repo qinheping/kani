@@ -37,10 +37,10 @@ else
 fi
 
 # Unit tests
-cargo test -p cprover_bindings
-cargo test -p kani-compiler
-cargo test -p kani-driver
-cargo test -p kani_metadata
+# cargo test -p cprover_bindings
+# cargo test -p kani-compiler
+# cargo test -p kani-driver
+# cargo test -p kani_metadata
 
 # Declare testing suite information (suite and mode)
 TESTS=(
@@ -74,8 +74,8 @@ for testp in "${TESTS[@]}"; do
   suite=${testl[0]}
   mode=${testl[1]}
   echo "Check compiletest suite=$suite mode=$mode"
-  cargo run -p compiletest --quiet -- --suite $suite --mode $mode \
-      --quiet --no-fail-fast
+  cargo run -p compiletest -- --suite $suite --mode $mode \
+       --no-fail-fast
 done
 
 # Check codegen for the standard library

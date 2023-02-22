@@ -54,6 +54,20 @@ impl TestProps {
 
                 if let Some(flags) = config.parse_kani_flags(ln) {
                     self.kani_flags.extend(flags.split_whitespace().map(|s| s.to_owned()));
+                    if !self.kani_flags.contains(&String::from("--enable-unstable")) {
+                        self.kani_flags.extend(
+                            String::from("--enable-unstable")
+                                .split_whitespace()
+                                .map(|s| s.to_owned()),
+                        );
+                    }
+                    if !self.kani_flags.contains(&String::from("--synthesize-loop-contracts")) {
+                        self.kani_flags.extend(
+                            String::from("--synthesize-loop-contracts")
+                                .split_whitespace()
+                                .map(|s| s.to_owned()),
+                        );
+                    }
                 }
 
                 if let Some(flags) = config.parse_cbmc_flags(ln) {
