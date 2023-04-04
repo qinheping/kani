@@ -1,0 +1,1 @@
+{"rustc":9507598187292370429,"features":"[]","target":172668738024333408,"profile":13883289224548942237,"path":894344549976474353,"deps":[[16122867154312557121,"kani_macros",false,9003354188730151158]],"local":[{"Precalculated":"1680580012.906954344s (stubs/Rust/vec/kani_vec.rs)"}],"rustflags":[],"metadata":7797948686568424061,"config":2202906307356721367,"compile_kind":0}
