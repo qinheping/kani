@@ -9,9 +9,9 @@ use serde::{ser::SerializeStruct, Serialize, Serializer};
 use stable_mir::mir::mono::Instance;
 use stable_mir::mir::visit::{Location, PlaceContext, PlaceRef};
 use stable_mir::mir::{
-    Body, Constant, MirVisitor, Mutability, ProjectionElem, Safety, Terminator, TerminatorKind,
+    BasicBlock, Body, MirVisitor, Mutability, ProjectionElem, Safety, Terminator, TerminatorKind,
 };
-use stable_mir::ty::{AdtDef, AdtKind, FnDef, GenericArgs, RigidTy, Ty, TyKind};
+use stable_mir::ty::{AdtDef, AdtKind, FnDef, GenericArgs, MirConst, RigidTy, Ty, TyKind};
 use stable_mir::visitor::{Visitable, Visitor};
 use stable_mir::{CrateDef, CrateItem};
 use std::collections::{HashMap, HashSet};
@@ -94,7 +94,7 @@ impl OverallStats {
                     return None;
                 };
                 let fn_sig = kind.fn_sig().unwrap();
-                let is_unsafe = fn_sig.skip_binder().unsafety == Safety::Unsafe;
+                let is_unsafe = fn_sig.skip_binder().safety == Safety::Unsafe;
                 self.fn_stats.get_mut(&item).unwrap().is_unsafe = Some(is_unsafe);
                 Some((item, is_unsafe))
             })
@@ -139,7 +139,7 @@ impl OverallStats {
                 };
                 let unsafe_ops = FnUnsafeOperations::new(item.name()).collect(&item.body());
                 let fn_sig = kind.fn_sig().unwrap();
-                let is_unsafe = fn_sig.skip_binder().unsafety == Safety::Unsafe;
+                let is_unsafe = fn_sig.skip_binder().safety == Safety::Unsafe;
                 self.fn_stats.get_mut(&item).unwrap().has_unsafe_ops =
                     Some(unsafe_ops.has_unsafe());
                 Some((is_unsafe, unsafe_ops))
@@ -159,6 +159,7 @@ impl OverallStats {
     pub fn loops(&mut self, filename: PathBuf) {
         let all_items = stable_mir::all_local_items();
         let (has_loops, no_loops) = all_items
+            .clone()
             .into_iter()
             .filter_map(|item| {
                 let kind = item.ty().kind();
@@ -168,9 +169,49 @@ impl OverallStats {
                 Some(FnLoops::new(item.name()).collect(&item.body()))
             })
             .partition::<Vec<_>, _>(|props| props.has_loops());
-        self.counters
-            .extend_from_slice(&[("has_loops", has_loops.len()), ("no_loops", no_loops.len())]);
-        dump_csv(filename, &has_loops);
+        let (has_iters, _) = all_items
+            .clone()
+            .into_iter()
+            .filter_map(|item| {
+                let kind = item.ty().kind();
+                if !kind.is_fn() {
+                    return None;
+                };
+                Some(FnLoops::new(item.name()).collect(&item.body()))
+            })
+            .partition::<Vec<_>, _>(|props| props.has_iterators());
+        let (has_non_array_for_loops, _) = all_items
+            .clone()
+            .into_iter()
+            .filter_map(|item| {
+                let kind = item.ty().kind();
+                if !kind.is_fn() {
+                    return None;
+                };
+                Some(FnLoops::new(item.name()).collect(&item.body()))
+            })
+            .partition::<Vec<_>, _>(|props| props.has_non_array_for_loops());
+        let (has_for_loops, _) = all_items
+            .into_iter()
+            .filter_map(|item| {
+                let kind = item.ty().kind();
+                if !kind.is_fn() {
+                    return None;
+                };
+                Some(FnLoops::new(item.name()).collect(&item.body()))
+            })
+            .partition::<Vec<_>, _>(|props| props.has_for_loops());
+        self.counters.extend_from_slice(&[
+            ("has_loops", has_loops.len()),
+            ("has_for_loops", has_for_loops.len()),
+            ("has_non_array_for_loops", has_non_array_for_loops.len()),
+            ("no_loops", no_loops.len()),
+            ("has_iterators", has_iters.len()),
+        ]);
+        dump_csv(filename.clone(), &has_loops);
+        dump_csv(filename.clone(), &has_iters);
+        dump_csv(filename.clone(), &has_for_loops);
+        dump_csv(filename, &has_non_array_for_loops)
     }
 
     /// Create a callgraph for this crate and try to find recursive calls.
@@ -387,7 +428,7 @@ impl<'a> MirVisitor for BodyVisitor<'a> {
         match &term.kind {
             TerminatorKind::Call { func, .. } => {
                 let fn_sig = func.ty(self.body.locals()).unwrap().kind().fn_sig().unwrap();
-                if fn_sig.value.unsafety == Safety::Unsafe {
+                if fn_sig.value.safety == Safety::Unsafe {
                     self.props.unsafe_call += 1;
                 }
             }
@@ -425,11 +466,11 @@ impl<'a> MirVisitor for BodyVisitor<'a> {
         self.super_projection_elem(elem, ptx, location)
     }
 
-    fn visit_constant(&mut self, constant: &Constant, location: Location) {
+    fn visit_mir_const(&mut self, constant: &MirConst, location: Location) {
         if constant.ty().kind().is_raw_ptr() {
             self.props.unsafe_static_access += 1;
         }
-        self.super_constant(constant, location)
+        self.super_mir_const(constant, location)
     }
 }
 
@@ -439,18 +480,29 @@ fn_props! {
         nested_loops,
         /// TODO: Collect loops.
         loops,
+        potential_for_loops,
+        non_array_for_loops,
     }
 }
 
 impl FnLoops {
     pub fn collect(self, body: &Body) -> FnLoops {
-        let mut visitor = IteratorVisitor { props: self, body };
+        let mut visitor = IteratorVisitor { props: self, body, visited: 0 };
         visitor.visit_body(body);
         visitor.props
     }
 
     pub fn has_loops(&self) -> bool {
-        (self.iterators + self.loops + self.nested_loops) > 0
+        (self.loops + self.nested_loops) > 0
+    }
+    pub fn has_for_loops(&self) -> bool {
+        (self.loops + self.nested_loops) > 0 && (self.potential_for_loops > 0)
+    }
+    pub fn has_iterators(&self) -> bool {
+        (self.iterators) > 0
+    }
+    pub fn has_non_array_for_loops(&self) -> bool {
+        self.has_for_loops() && self.non_array_for_loops > 0
     }
 }
 
@@ -461,13 +513,23 @@ impl FnLoops {
 struct IteratorVisitor<'a> {
     props: FnLoops,
     body: &'a Body,
+    visited: usize,
 }
 
 impl<'a> MirVisitor for IteratorVisitor<'a> {
+    fn visit_basic_block(&mut self, bb: &BasicBlock) {
+        self.visited += 1;
+        self.super_basic_block(bb);
+    }
     fn visit_terminator(&mut self, term: &Terminator, location: Location) {
+        if let TerminatorKind::Goto { target } = &term.kind {
+            if self.visited > *target {
+                self.props.loops += 1;
+            }
+        }
         if let TerminatorKind::Call { func, .. } = &term.kind {
             let kind = func.ty(self.body.locals()).unwrap().kind();
-            if let TyKind::RigidTy(RigidTy::FnDef(def, _)) = kind {
+            if let TyKind::RigidTy(RigidTy::FnDef(def, g_args)) = kind {
                 let fullname = def.name();
                 let names = fullname.split("::").collect::<Vec<_>>();
                 if let [.., s_last, last] = names.as_slice() {
@@ -501,6 +563,30 @@ impl<'a> MirVisitor for IteratorVisitor<'a> {
                         .contains(last)
                     {
                         self.props.iterators += 1;
+                    }
+                    if *s_last == "Iterator" && ["next"].contains(last) {
+                        if let Some(RigidTy::Adt(adt_def, _)) =
+                            g_args.0[0].expect_ty().kind().rigid()
+                        {
+                            let defname = adt_def.name();
+                            let splitnames = defname.split("::").collect::<Vec<_>>();
+
+                            if let [.., t_last, s_last, last] = splitnames.as_slice() {
+                                if !(["IntoIter", "Iter", "IterMut", "Range"].contains(last) &&
+                                     [
+                                        "iter",
+                                        "slice",
+                                        "array",
+                                        "range",
+                                        "ops",
+                                    ]
+                                    .contains(s_last))
+                                {
+                                    self.props.non_array_for_loops += 1;
+                                }
+                            }
+                        }
+                        self.props.potential_for_loops += 1
                     }
                 }
             }

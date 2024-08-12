@@ -54,17 +54,17 @@ pub fn run_analyses(rustc_args: Vec<String>, analyses: &[Analysis], verbose: boo
 #[strum(serialize_all = "snake_case")]
 pub enum Analysis {
     /// Collect information about generic functions.
-    MonoFns,
+    // MonoFns,
     /// Collect information about function safety.
-    SafeFns,
+    // SafeFns,
     /// Collect information about function inputs.
-    InputTys,
+    // InputTys,
     /// Collect information about unsafe operations.
-    UnsafeOps,
+    //UnsafeOps,
     /// Collect information about loops inside a function.
     FnLoops,
-    /// Collect information about recursion via direct calls.
-    Recursion,
+    // Collect information about recursion via direct calls.
+    // Recursion,
 }
 
 fn info(msg: String) {
@@ -86,16 +86,16 @@ fn analyze_crate(tcx: TyCtxt, analyses: &[Analysis]) -> ControlFlow<()> {
         let mut out_path = base_path.parent().map_or(PathBuf::default(), Path::to_path_buf);
         out_path.set_file_name(filename);
         match analysis {
-            Analysis::MonoFns => {
-                crate_stats.generic_fns();
-            }
-            Analysis::SafeFns => {
-                crate_stats.safe_fns(out_path);
-            }
-            Analysis::InputTys => crate_stats.supported_inputs(out_path),
-            Analysis::UnsafeOps => crate_stats.unsafe_operations(out_path),
+            //Analysis::MonoFns => {
+            //    crate_stats.generic_fns();
+            //}
+            //Analysis::SafeFns => {
+            //    crate_stats.safe_fns(out_path);
+            //}
+            // Analysis::InputTys => crate_stats.supported_inputs(out_path),
+            //Analysis::UnsafeOps => crate_stats.unsafe_operations(out_path),
             Analysis::FnLoops => crate_stats.loops(out_path),
-            Analysis::Recursion => crate_stats.recursion(out_path),
+            //Analysis::Recursion => crate_stats.recursion(out_path),
         }
     }
     crate_stats.store_csv(base_path, &file_stem);
